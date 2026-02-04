@@ -24,7 +24,7 @@ codegen-units = 1
 lto = "thin"
 
 [features]
-dev = ["bevy/dynamic_linking"]
+dev = ["bevy/dynamic_linking", "bevy/debug"]
 
 [dependencies]
 bevy = { version = "0.18.0", features = ["free_camera"] }

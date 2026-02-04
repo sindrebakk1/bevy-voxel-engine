@@ -1,15 +1,21 @@
-use bevy::mesh::{Indices, PrimitiveTopology};
+use bevy::mesh::{Indices, MeshVertexAttribute, PrimitiveTopology, VertexFormat};
 use bevy::prelude::*;
 
 use crate::plugins::world::{
-    chunk::{Chunk, Voxel, CHUNK_SIZE},
+    blocks::{BlockId, BlockRegistry, TileId},
+    chunk::{CHUNK_SIZE, Chunk},
     meshers::ChunkMesher,
 };
+
+pub const ATTRIBUTE_TILE_ID: MeshVertexAttribute =
+    MeshVertexAttribute::new("TileId", 0xBADC0DE1, VertexFormat::Uint32);
 
 struct VoxelMeshBuilder {
     positions: Vec<Vec3>,
     normals: Vec<Vec3>,
+    uvs: Vec<[f32; 2]>,
     indices: Vec<u32>,
+    tile_ids: Vec<u32>,
 }
 
 impl VoxelMeshBuilder {
@@ -17,16 +23,24 @@ impl VoxelMeshBuilder {
         Self {
             positions: Vec::new(),
             normals: Vec::new(),
+            uvs: Vec::new(),
             indices: Vec::new(),
+            tile_ids: Vec::new(),
         }
     }
 
     #[inline]
-    fn add_quad(&mut self, verts: [Vec3; 4], normal: Vec3) {
+    fn add_quad(&mut self, verts: [Vec3; 4], tile_id: TileId, normal: Vec3) {
         let base = self.positions.len() as u32;
 
         self.positions.extend_from_slice(&verts);
+
         self.normals.extend_from_slice(&[normal; 4]);
+
+        let uvs = face_uvs(normal);
+        self.uvs.extend_from_slice(&uvs);
+
+        self.tile_ids.extend_from_slice(&[tile_id as u32; 4]);
 
         self.indices
             .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
@@ -37,9 +51,25 @@ impl VoxelMeshBuilder {
 
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, self.positions);
         mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, self.normals);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, self.uvs);
+        mesh.insert_attribute(ATTRIBUTE_TILE_ID, self.tile_ids);
         mesh.insert_indices(Indices::U32(self.indices));
 
         mesh
+    }
+}
+
+fn face_uvs(normal: Vec3) -> [[f32; 2]; 4] {
+    if normal == Vec3::X {
+        [[0., 1.], [0., 0.], [1., 0.], [1., 1.]]
+    } else if normal == Vec3::NEG_X {
+        [[1., 1.], [1., 0.], [0., 0.], [0., 1.]]
+    } else if normal == Vec3::Z {
+        [[0., 1.], [1., 1.], [1., 0.], [0., 0.]]
+    } else if normal == Vec3::NEG_Z {
+        [[1., 1.], [0., 1.], [0., 0.], [1., 0.]]
+    } else {
+        [[0., 1.], [1., 1.], [1., 0.], [0., 0.]]
     }
 }
 
@@ -119,16 +149,59 @@ const FACES: [Face; 6] = [
     },
 ];
 
+#[derive(Copy, Clone)]
+pub enum FaceKind {
+    Top,
+    Bottom,
+    Side,
+}
+
+#[inline]
+pub fn face_kind_from_normal(n: Vec3) -> FaceKind {
+    if n == Vec3::Y {
+        FaceKind::Top
+    } else if n == Vec3::NEG_Y {
+        FaceKind::Bottom
+    } else {
+        FaceKind::Side
+    }
+}
+
+pub struct TileResolver<'a> {
+    pub registry: &'a BlockRegistry,
+}
+
+impl<'a> TileResolver<'a> {
+    #[inline]
+    pub fn resolve(
+        &self,
+        block_id: BlockId,
+        face: FaceKind,
+        // room for neighbor-based rules later:
+        // world_pos: IVec3,
+        // chunk: &Chunk,
+    ) -> TileId {
+        let t = self.registry.tiles(block_id);
+        match face {
+            FaceKind::Top => t.top,
+            FaceKind::Bottom => t.bottom,
+            FaceKind::Side => t.side,
+        }
+    }
+}
+
 pub struct NaiveMesher;
 
 impl ChunkMesher for NaiveMesher {
-    fn build_mesh(&self, chunk: &Chunk) -> Mesh {
+    fn build_mesh(&self, chunk: &Chunk, registry: &BlockRegistry) -> Mesh {
+        let resolver = TileResolver { registry };
         let mut builder = VoxelMeshBuilder::new();
 
         for z in 0..CHUNK_SIZE {
             for y in 0..CHUNK_SIZE {
                 for x in 0..CHUNK_SIZE {
-                    if chunk.get(x, y, z) == Voxel::Air {
+                    let voxel = chunk.get(x, y, z);
+                    if voxel.is_air() {
                         continue;
                     }
 
@@ -140,20 +213,28 @@ impl ChunkMesher for NaiveMesher {
                         let ny = y as i32 + n.y;
                         let nz = z as i32 + n.z;
 
-                        let visible = nx < 0
+                        let outside = nx < 0
                             || ny < 0
                             || nz < 0
                             || nx >= CHUNK_SIZE as i32
                             || ny >= CHUNK_SIZE as i32
-                            || nz >= CHUNK_SIZE as i32
-                            || chunk.get(nx as usize, ny as usize, nz as usize) == Voxel::Air;
+                            || nz >= CHUNK_SIZE as i32;
 
-                        if !visible {
+                        let neighbor_is_air = if outside {
+                            true
+                        } else {
+                            chunk.get(nx as usize, ny as usize, nz as usize).is_air()
+                        };
+
+                        if !neighbor_is_air {
                             continue;
                         }
 
+                        let face_kind = face_kind_from_normal(face.normal);
+                        let tile_id = resolver.resolve(voxel.block_id(), face_kind);
+
                         let verts = face.vertices.map(|v| base + v);
-                        builder.add_quad(verts, face.normal);
+                        builder.add_quad(verts, tile_id, face.normal);
                     }
                 }
             }

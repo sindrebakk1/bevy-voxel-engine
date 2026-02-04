@@ -1,16 +1,23 @@
+pub mod blocks;
 pub mod chunk;
 pub mod events;
+pub mod material;
 pub mod meshers;
+pub mod voxel;
 pub mod voxel_picking;
 
 use bevy::ecs::{entity::MapEntities, lifecycle::HookContext, world::DeferredWorld};
 use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
 
-use chunk::{Chunk, CHUNK_SIZE};
+use blocks::BlockRegistryRes;
+use chunk::{CHUNK_SIZE, Chunk};
 use events::on_voxel_clicked;
+use material::{VoxelAtlasHandles, VoxelAtlasMaterialPlugin};
 use meshers::{ChunkMesher, NaiveMesher};
 use voxel_picking::VoxelPickingPlugin;
+
+use crate::state::LoadingState;
 
 #[derive(Resource)]
 pub struct MesherResource(pub Box<dyn ChunkMesher>);
@@ -81,12 +88,16 @@ pub struct WorldPlugin;
 
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(MesherResource(Box::new(NaiveMesher)))
+        app.init_resource::<BlockRegistryRes>()
+            .insert_resource(MesherResource(Box::new(NaiveMesher)))
             .insert_resource(ChunkMap {
                 chunks: HashMap::with_capacity(128),
             })
-            .add_plugins(VoxelPickingPlugin)
-            .add_systems(Update, rebuild_dirty_chunks)
+            .add_plugins((VoxelAtlasMaterialPlugin, VoxelPickingPlugin))
+            .add_systems(
+                Update,
+                rebuild_dirty_chunks.run_if(in_state(LoadingState::Initialized)),
+            )
             .add_observer(on_voxel_clicked);
     }
 }
@@ -94,8 +105,9 @@ impl Plugin for WorldPlugin {
 fn rebuild_dirty_chunks(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    block_registry: Res<BlockRegistryRes>,
     mesher: Res<MesherResource>,
+    handles: Res<VoxelAtlasHandles>,
     mut query: Query<(Entity, &mut ChunkComponent, Option<&mut Mesh3d>)>,
 ) {
     for (entity, mut chunk_comp, mesh3d_opt) in query.iter_mut() {
@@ -103,20 +115,16 @@ fn rebuild_dirty_chunks(
             continue;
         }
 
-        let mesh = mesher.0.build_mesh(&chunk_comp.chunk);
+        let mesh = mesher.0.build_mesh(&chunk_comp.chunk, &block_registry.0);
 
         let handle = meshes.add(mesh);
 
         match mesh3d_opt {
             Some(mut mesh3d) => mesh3d.0 = handle,
             None => {
-                commands.entity(entity).insert((
-                    Mesh3d(handle),
-                    MeshMaterial3d(materials.add(StandardMaterial {
-                        base_color: LinearRgba::GREEN.into(),
-                        ..default()
-                    })),
-                ));
+                commands
+                    .entity(entity)
+                    .insert((Mesh3d(handle), MeshMaterial3d(handles.material.clone())));
             }
         };
 

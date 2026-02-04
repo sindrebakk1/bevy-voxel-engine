@@ -2,8 +2,7 @@ use bevy::color::palettes::basic::YELLOW;
 use bevy::math::Ray3d;
 use bevy::prelude::*;
 
-use crate::plugins::world::chunk::{CHUNK_SIZE, Voxel};
-use crate::plugins::world::{ChunkComponent, ChunkCoord};
+use crate::plugins::world::{ChunkComponent, ChunkCoord, chunk::CHUNK_SIZE};
 
 pub struct VoxelPickingPlugin;
 
@@ -277,7 +276,7 @@ fn is_solid(world_cell: IVec3, chunks: &Query<(&ChunkComponent, &ChunkCoord)>) -
             let v = chunk_comp
                 .chunk
                 .get(local.x as usize, local.y as usize, local.z as usize);
-            return matches!(v, Voxel::Solid);
+            return !v.is_air();
         }
     }
 

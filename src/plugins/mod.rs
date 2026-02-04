@@ -1,5 +1,6 @@
+pub mod asset_loader;
 pub mod character;
 pub mod debug;
 pub mod world;
 
-pub use {debug::mesh_debug::MeshDebugPlugin, world::WorldPlugin};
+pub use {asset_loader::AssetLoaderPlugin, debug::mesh_debug::MeshDebugPlugin, world::WorldPlugin};

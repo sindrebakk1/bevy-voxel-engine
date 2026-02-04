@@ -1,27 +1,44 @@
+mod plugins;
+mod state;
+
 use bevy::camera_controller::free_camera::{FreeCamera, FreeCameraPlugin};
 use bevy::prelude::*;
 
 use plugins::{
+    AssetLoaderPlugin, MeshDebugPlugin, WorldPlugin,
     world::{
-        chunk::{Chunk, Voxel, CHUNK_SIZE},
-        events::VoxelClicked,
-        voxel_picking::HoveredVoxel,
         ChunkComponent, ChunkCoord,
+        blocks::{BLOCK_DIRT, BLOCK_GRASS},
+        chunk::{CHUNK_SIZE, Chunk},
+        events::VoxelClicked,
+        voxel::Voxel,
+        voxel_picking::HoveredVoxel,
     },
-    MeshDebugPlugin, WorldPlugin,
 };
+use state::loading_state::LoadingState;
 
-mod plugins;
-
-const MAP_HALF_SIZE: i32 = 3;
+const MAP_HALF_SIZE: i32 = 2;
+const MAP_GROUND_HEIGHT: usize = 16;
 
 pub struct GamePlugin;
 
 impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins((WorldPlugin, FreeCameraPlugin, MeshDebugPlugin))
-            .add_systems(Startup, (spawn_test_chunks, spawn_camera))
-            .add_systems(PreUpdate, emit_voxel_click_event);
+        app.init_state::<LoadingState>()
+            .add_plugins((
+                AssetLoaderPlugin,
+                WorldPlugin,
+                FreeCameraPlugin,
+                MeshDebugPlugin,
+            ))
+            .add_systems(
+                OnEnter(LoadingState::Initialized),
+                (spawn_test_chunks, spawn_camera),
+            )
+            .add_systems(
+                PreUpdate,
+                emit_voxel_click_event.run_if(in_state(LoadingState::Initialized)),
+            );
     }
 }
 
@@ -33,9 +50,10 @@ fn spawn_test_chunks(mut commands: Commands) {
                 if chunk_z == 0 {
                     for x in 0..CHUNK_SIZE {
                         for z in 0..CHUNK_SIZE {
-                            for y in 0..8 {
-                                chunk.set(x, y, z, Voxel::Solid);
+                            for y in 0..MAP_GROUND_HEIGHT - 1 {
+                                chunk.set(x, y, z, Voxel::new(BLOCK_DIRT));
                             }
+                            chunk.set(x, MAP_GROUND_HEIGHT - 1, z, Voxel::new(BLOCK_GRASS));
                         }
                     }
                 }

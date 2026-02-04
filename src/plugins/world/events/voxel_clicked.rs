@@ -1,9 +1,11 @@
 use bevy::prelude::*;
 
 use crate::plugins::world::{
-    chunk::{Voxel, CHUNK_SIZE},
-    voxel_picking::{VoxelFace, VoxelHit},
     ChunkComponent, ChunkCoord, ChunkMap,
+    blocks::BLOCK_DIRT,
+    chunk::CHUNK_SIZE,
+    voxel::Voxel,
+    voxel_picking::{VoxelFace, VoxelHit},
 };
 
 #[derive(Event, Debug, Clone, Copy)]
@@ -44,7 +46,7 @@ pub fn on_voxel_clicked(event: On<VoxelClicked>, mut commands: Commands, chunk_m
                         local.x as usize,
                         local.y as usize,
                         local.z as usize,
-                        Voxel::Solid,
+                        Voxel::new(BLOCK_DIRT),
                     );
                 });
         }
@@ -62,7 +64,7 @@ pub fn on_voxel_clicked(event: On<VoxelClicked>, mut commands: Commands, chunk_m
                         local.x as usize,
                         local.y as usize,
                         local.z as usize,
-                        Voxel::Air,
+                        Voxel::AIR,
                     );
                 });
         }

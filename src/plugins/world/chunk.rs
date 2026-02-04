@@ -1,15 +1,9 @@
 use bevy::prelude::*;
 
+use crate::plugins::world::voxel::Voxel;
+
 pub const CHUNK_SIZE: usize = 32;
 pub const CHUNK_VOLUME: usize = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE;
-
-#[repr(u8)]
-#[derive(Copy, Clone, Eq, PartialEq, Default, Debug)]
-pub enum Voxel {
-    #[default]
-    Air = 0,
-    Solid = 1,
-}
 
 #[derive(Clone, Debug)]
 pub struct Chunk {
@@ -29,7 +23,7 @@ impl Default for Chunk {
 impl Chunk {
     pub fn new() -> Self {
         Self {
-            voxels: Box::new([Voxel::Air; CHUNK_VOLUME]),
+            voxels: Box::new([Voxel::default(); CHUNK_VOLUME]),
             dirty: true,
         }
     }

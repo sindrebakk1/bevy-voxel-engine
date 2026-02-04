@@ -10,9 +10,9 @@
 linker = "rust-lld.exe"
 rustdocflags = ["-Clinker=rust-lld.exe"]
 rustflags = [
-    # Nightly
-    # "-Zshare-generics=n", # This needs to be off if you use dynamic linking on Windows.
-    # "-Zthreads=0",
+	# Nightly
+	# "-Zshare-generics=n", # This needs to be off if you use dynamic linking on Windows.
+	# "-Zthreads=0",
 ]
 
 [alias]
