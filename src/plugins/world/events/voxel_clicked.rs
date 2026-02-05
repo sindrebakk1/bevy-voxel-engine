@@ -2,7 +2,7 @@ use bevy::prelude::*;
 
 use crate::plugins::world::{
     ChunkComponent, ChunkCoord, ChunkMap,
-    blocks::BLOCK_DIRT,
+    blocks::BLOCK_STONE,
     chunk::CHUNK_SIZE,
     voxel::Voxel,
     voxel_picking::{VoxelFace, VoxelHit},
@@ -46,7 +46,7 @@ pub fn on_voxel_clicked(event: On<VoxelClicked>, mut commands: Commands, chunk_m
                         local.x as usize,
                         local.y as usize,
                         local.z as usize,
-                        Voxel::new(BLOCK_DIRT),
+                        Voxel::new(BLOCK_STONE),
                     );
                 });
         }

@@ -10,14 +10,6 @@ use bevy::{
 
 use crate::plugins::world::meshers::naive_mesher::ATTRIBUTE_TILE_ID;
 
-#[allow(unused)]
-#[derive(Resource, Clone)]
-pub struct VoxelAtlasHandles {
-    pub atlas: Handle<Image>,
-    pub material: Handle<VoxelAtlasMaterial>,
-    pub grid: UVec2,
-}
-
 #[derive(Asset, TypePath, AsBindGroup, Clone)]
 pub struct VoxelAtlasMaterial {
     #[texture(0)]

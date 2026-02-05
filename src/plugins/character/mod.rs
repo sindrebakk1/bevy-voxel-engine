@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 
+#[allow(unused)]
 pub struct CharacterPlugin;
 
 impl Plugin for CharacterPlugin {

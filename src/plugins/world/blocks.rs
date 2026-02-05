@@ -6,6 +6,7 @@ pub type TileId = u16;
 
 pub const BLOCK_GRASS: BlockId = 1;
 pub const BLOCK_DIRT: BlockId = 2;
+pub const BLOCK_STONE: BlockId = 3;
 
 #[derive(Copy, Clone)]
 pub struct BlockTiles {
@@ -52,10 +53,11 @@ pub struct BlockRegistryRes(pub BlockRegistry);
 
 impl Default for BlockRegistryRes {
     fn default() -> Self {
-        let mut registry = BlockRegistry::with_capacity(2);
+        let mut registry = BlockRegistry::with_capacity(32);
 
         registry.insert(BLOCK_GRASS);
         registry.insert(BLOCK_DIRT);
+        registry.insert(BLOCK_STONE);
 
         BlockRegistryRes(registry)
     }

@@ -6,11 +6,9 @@ use bevy::{
     prelude::*,
 };
 
-use crate::{
-    plugins::world::material::{VoxelAtlasHandles, VoxelAtlasMaterial},
-    state::loading_state::LoadingState,
-};
-use assets::GameAssets;
+use crate::{plugins::world::material::VoxelAtlasMaterial, state::loading_state::LoadingState};
+
+use assets::*;
 
 pub struct AssetLoaderPlugin;
 
@@ -26,7 +24,7 @@ impl Plugin for AssetLoaderPlugin {
 
 fn load_assets(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.insert_resource(GameAssets {
-        dirt_atlas: asset_server.load("textures/dirt.png"),
+        block_atlas: asset_server.load("textures/blocks.png"),
     });
 }
 
@@ -39,14 +37,14 @@ fn finalize_assets(
     mut next_state: ResMut<NextState<LoadingState>>,
 ) {
     if !matches!(
-        asset_server.get_load_state(&assets.dirt_atlas),
+        asset_server.get_load_state(&assets.block_atlas),
         Some(LoadState::Loaded)
     ) {
         return;
     }
 
     let img = images
-        .get_mut(&assets.dirt_atlas)
+        .get_mut(&assets.block_atlas)
         .expect("Loaded but image missing from Assets<Image>");
 
     img.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor::nearest());
@@ -56,7 +54,7 @@ fn finalize_assets(
 
     assert!(
         w.is_multiple_of(32) && h == 32 * 3,
-        "textures/dirt.png is {}x{} but must be divisible by 32 (tile size 32x32, no padding).",
+        "textures/blocks.png is {}x{} but must be divisible by 32 (tile size 32x32, no padding).",
         w,
         h
     );
@@ -64,15 +62,11 @@ fn finalize_assets(
     let grid = UVec2::new(w / 32, h / 32);
 
     let material = materials.add(VoxelAtlasMaterial {
-        atlas: assets.dirt_atlas.clone(),
+        atlas: assets.block_atlas.clone(),
         grid,
     });
 
-    commands.insert_resource(VoxelAtlasHandles {
-        atlas: assets.dirt_atlas.clone(),
-        material,
-        grid,
-    });
+    commands.insert_resource(VoxelAtlasHandles { material });
 
     next_state.set(LoadingState::Initialized);
 }

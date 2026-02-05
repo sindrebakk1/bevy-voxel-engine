@@ -13,11 +13,11 @@ use bevy::prelude::*;
 use blocks::BlockRegistryRes;
 use chunk::{CHUNK_SIZE, Chunk};
 use events::on_voxel_clicked;
-use material::{VoxelAtlasHandles, VoxelAtlasMaterialPlugin};
+use material::VoxelAtlasMaterialPlugin;
 use meshers::{ChunkMesher, NaiveMesher};
 use voxel_picking::VoxelPickingPlugin;
 
-use crate::state::LoadingState;
+use crate::{plugins::asset_loader::assets::VoxelAtlasHandles, state::LoadingState};
 
 #[derive(Resource)]
 pub struct MesherResource(pub Box<dyn ChunkMesher>);

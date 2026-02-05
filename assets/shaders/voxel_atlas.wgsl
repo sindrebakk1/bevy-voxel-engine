@@ -11,7 +11,6 @@ struct MaterialUniform {
 struct VertexIn {
     @builtin(instance_index) instance_index : u32,
 
-    // These MUST match the shader locations you used in specialize()
     @location(0) position : vec3<f32>,
     @location(1) normal   : vec3<f32>,
     @location(2) uv       : vec2<f32>,
