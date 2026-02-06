@@ -2,7 +2,7 @@ use bevy::color::palettes::basic::YELLOW;
 use bevy::math::Ray3d;
 use bevy::prelude::*;
 
-use crate::plugins::world::{ChunkCoord, ChunkEntityMap, Chunks, chunk::CHUNK_SIZE};
+use crate::plugins::world::{ChunkEntityMap, Chunks, chunk::CHUNK_SIZE};
 
 pub struct VoxelPickingPlugin;
 
@@ -271,7 +271,7 @@ fn build_hit(world_cell: IVec3, face: VoxelFace) -> VoxelHit {
 fn is_solid(world_cell: IVec3, chunk_map: &ChunkEntityMap, chunks: &mut Chunks) -> bool {
     let (chunk_coord, local) = world_to_chunk_local(world_cell);
 
-    let Some(entity) = chunk_map.chunks.get(&ChunkCoord(chunk_coord)) else {
+    let Some(entity) = chunk_map.chunks.get(&chunk_coord) else {
         return false;
     };
 

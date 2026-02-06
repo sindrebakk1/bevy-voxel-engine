@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use crate::plugins::world::{
-    ChunkCoord, ChunkEntityMap, Chunks,
+    ChunkEntityMap, Chunks,
     blocks::BLOCK_STONE,
     chunk::CHUNK_SIZE,
     voxel::Voxel,
@@ -24,11 +24,9 @@ pub fn on_voxel_clicked(
     let local = hit.local.as_uvec3();
     if local.x >= CHUNK_SIZE as u32 || local.y >= CHUNK_SIZE as u32 || local.z >= CHUNK_SIZE as u32
     {
-        info!("out of bounds");
+        warn!("[event] VoxelClicked: local out of bounds");
         return;
     }
-
-    info!("clicked: ({:?}, {:?}, {:?})", local.x, local.y, local.z);
 
     match button {
         MouseButton::Left => {
@@ -36,9 +34,7 @@ pub fn on_voxel_clicked(
                 return;
             };
 
-            info!("{chunk:?}, {local:?}");
-
-            let Some(entity) = chunk_map.get(&ChunkCoord(chunk)) else {
+            let Some(entity) = chunk_map.get(&chunk) else {
                 return;
             };
 
@@ -52,7 +48,7 @@ pub fn on_voxel_clicked(
             });
         }
         MouseButton::Right => {
-            let Some(entity) = chunk_map.get(&ChunkCoord(hit.chunk)) else {
+            let Some(entity) = chunk_map.get(&hit.chunk) else {
                 return;
             };
 

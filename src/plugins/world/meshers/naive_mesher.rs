@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use crate::plugins::world::{
     blocks::{BlockId, BlockRegistry, TileId},
     chunk::{CHUNK_SIZE, Chunk},
-    meshers::ChunkMesher,
+    meshers::{ChunkMesher, Neighbors},
 };
 
 pub const ATTRIBUTE_TILE_ID: MeshVertexAttribute =
@@ -30,14 +30,13 @@ impl VoxelMeshBuilder {
     }
 
     #[inline]
-    fn add_quad(&mut self, verts: [Vec3; 4], tile_id: TileId, normal: Vec3) {
+    fn add_quad(&mut self, verts: [Vec3; 4], uvs: [[f32; 2]; 4], tile_id: TileId, normal: Vec3) {
         let base = self.positions.len() as u32;
 
         self.positions.extend_from_slice(&verts);
 
         self.normals.extend_from_slice(&[normal; 4]);
 
-        let uvs = face_uvs(normal);
         self.uvs.extend_from_slice(&uvs);
 
         self.tile_ids.extend_from_slice(&[tile_id as u32; 4]);
@@ -59,25 +58,12 @@ impl VoxelMeshBuilder {
     }
 }
 
-fn face_uvs(normal: Vec3) -> [[f32; 2]; 4] {
-    if normal == Vec3::X {
-        [[0., 1.], [0., 0.], [1., 0.], [1., 1.]]
-    } else if normal == Vec3::NEG_X {
-        [[1., 1.], [1., 0.], [0., 0.], [0., 1.]]
-    } else if normal == Vec3::Z {
-        [[0., 1.], [1., 1.], [1., 0.], [0., 0.]]
-    } else if normal == Vec3::NEG_Z {
-        [[1., 1.], [0., 1.], [0., 0.], [1., 0.]]
-    } else {
-        [[0., 1.], [1., 1.], [1., 0.], [0., 0.]]
-    }
-}
-
 #[derive(Copy, Clone)]
 struct Face {
     pub normal: Vec3,
     pub neighbor_offset: IVec3,
     pub vertices: [Vec3; 4],
+    pub uvs: [[f32; 2]; 4],
 }
 
 const FACES: [Face; 6] = [
@@ -91,6 +77,7 @@ const FACES: [Face; 6] = [
             Vec3::new(1.0, 1.0, 1.0),
             Vec3::new(1.0, 0.0, 1.0),
         ],
+        uvs: [[0., 1.], [0., 0.], [1., 0.], [1., 1.]],
     },
     // -X
     Face {
@@ -102,6 +89,7 @@ const FACES: [Face; 6] = [
             Vec3::new(0.0, 1.0, 0.0),
             Vec3::new(0.0, 0.0, 0.0),
         ],
+        uvs: [[1., 1.], [1., 0.], [0., 0.], [0., 1.]],
     },
     // +Y
     Face {
@@ -113,6 +101,7 @@ const FACES: [Face; 6] = [
             Vec3::new(1.0, 1.0, 1.0),
             Vec3::new(1.0, 1.0, 0.0),
         ],
+        uvs: [[0., 1.], [1., 1.], [1., 0.], [0., 0.]],
     },
     // -Y
     Face {
@@ -124,6 +113,7 @@ const FACES: [Face; 6] = [
             Vec3::new(1.0, 0.0, 0.0),
             Vec3::new(1.0, 0.0, 1.0),
         ],
+        uvs: [[0., 1.], [1., 1.], [1., 0.], [0., 0.]],
     },
     // +Z
     Face {
@@ -135,6 +125,7 @@ const FACES: [Face; 6] = [
             Vec3::new(1.0, 1.0, 1.0),
             Vec3::new(0.0, 1.0, 1.0),
         ],
+        uvs: [[0., 1.], [1., 1.], [1., 0.], [0., 0.]],
     },
     // -Z
     Face {
@@ -146,6 +137,7 @@ const FACES: [Face; 6] = [
             Vec3::new(0.0, 1.0, 0.0),
             Vec3::new(1.0, 1.0, 0.0),
         ],
+        uvs: [[1., 1.], [0., 1.], [0., 0.], [1., 0.]],
     },
 ];
 
@@ -173,14 +165,7 @@ pub struct TileResolver<'a> {
 
 impl<'a> TileResolver<'a> {
     #[inline]
-    pub fn resolve(
-        &self,
-        block_id: BlockId,
-        face: FaceKind,
-        // room for neighbor-based rules later:
-        // world_pos: IVec3,
-        // chunk: &Chunk,
-    ) -> TileId {
+    pub fn resolve(&self, block_id: BlockId, face: FaceKind) -> TileId {
         let t = self.registry.tiles(block_id);
         match face {
             FaceKind::Top => t.top,
@@ -193,7 +178,7 @@ impl<'a> TileResolver<'a> {
 pub struct NaiveMesher;
 
 impl ChunkMesher for NaiveMesher {
-    fn build_mesh(&self, chunk: &Chunk, registry: &BlockRegistry) -> Mesh {
+    fn build_mesh(&self, chunk: &Chunk, neighbors: Neighbors, registry: &BlockRegistry) -> Mesh {
         let resolver = TileResolver { registry };
         let mut builder = VoxelMeshBuilder::new();
 
@@ -208,25 +193,7 @@ impl ChunkMesher for NaiveMesher {
                     let base = Vec3::new(x as f32, y as f32, z as f32);
 
                     for face in &FACES {
-                        let n = face.neighbor_offset;
-                        let nx = x as i32 + n.x;
-                        let ny = y as i32 + n.y;
-                        let nz = z as i32 + n.z;
-
-                        let outside = nx < 0
-                            || ny < 0
-                            || nz < 0
-                            || nx >= CHUNK_SIZE as i32
-                            || ny >= CHUNK_SIZE as i32
-                            || nz >= CHUNK_SIZE as i32;
-
-                        let neighbor_is_air = if outside {
-                            true
-                        } else {
-                            chunk.get(nx as usize, ny as usize, nz as usize).is_air()
-                        };
-
-                        if !neighbor_is_air {
+                        if !neighbor_is_air(chunk, &neighbors, x, y, z, face.neighbor_offset) {
                             continue;
                         }
 
@@ -234,7 +201,7 @@ impl ChunkMesher for NaiveMesher {
                         let tile_id = resolver.resolve(voxel.block_id(), face_kind);
 
                         let verts = face.vertices.map(|v| base + v);
-                        builder.add_quad(verts, tile_id, face.normal);
+                        builder.add_quad(verts, face.uvs, tile_id, face.normal);
                     }
                 }
             }
@@ -242,4 +209,34 @@ impl ChunkMesher for NaiveMesher {
 
         builder.build()
     }
+}
+
+fn neighbor_is_air(
+    chunk: &Chunk,
+    neighbours: &Neighbors,
+    x: usize,
+    y: usize,
+    z: usize,
+    offset: IVec3,
+) -> bool {
+    let nx = x as i32 + offset.x;
+    let ny = y as i32 + offset.y;
+    let nz = z as i32 + offset.z;
+
+    if (0..CHUNK_SIZE as i32).contains(&nx)
+        && (0..CHUNK_SIZE as i32).contains(&ny)
+        && (0..CHUNK_SIZE as i32).contains(&nz)
+    {
+        return chunk.get(nx as usize, ny as usize, nz as usize).is_air();
+    }
+
+    let Some(nchunk) = neighbours.get_from_normal(offset) else {
+        return true;
+    };
+
+    let lx = ((nx % CHUNK_SIZE as i32) + CHUNK_SIZE as i32) % CHUNK_SIZE as i32;
+    let ly = ((ny % CHUNK_SIZE as i32) + CHUNK_SIZE as i32) % CHUNK_SIZE as i32;
+    let lz = ((nz % CHUNK_SIZE as i32) + CHUNK_SIZE as i32) % CHUNK_SIZE as i32;
+
+    nchunk.get(lx as usize, ly as usize, lz as usize).is_air()
 }

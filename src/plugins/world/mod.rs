@@ -14,7 +14,7 @@ use blocks::BlockRegistryRes;
 use chunk::{CHUNK_SIZE, Chunk};
 use events::on_voxel_clicked;
 use material::VoxelAtlasMaterialPlugin;
-use meshers::{ChunkMesher, NaiveMesher};
+use meshers::{ChunkMesher, NaiveMesher, Neighbors, Neighbour};
 use voxel_picking::VoxelPickingPlugin;
 
 use crate::{plugins::asset_loader::assets::VoxelAtlasHandles, state::LoadingState};
@@ -31,38 +31,24 @@ impl Default for Chunks {
     }
 }
 
-#[derive(Component, Default)]
-#[require(ChunkCoord, Transform)]
-pub struct ChunkComponent;
-
-pub trait SpawnChunkCommandExt {
-    fn spawn_chunk(&mut self, chunk: Chunk, coord: IVec3);
-}
-
-impl<'w, 's> SpawnChunkCommandExt for Commands<'w, 's> {
-    fn spawn_chunk(&mut self, chunk: Chunk, coord: IVec3) {
-        self.queue(move |world: &mut World| {
-            let entity = world.spawn((ChunkComponent, ChunkCoord(coord))).id();
-            world.resource_mut::<Chunks>().0.insert(entity, chunk);
-        })
-    }
-}
-
 #[derive(Component, Copy, Clone, Eq, PartialEq, Default, Hash, MapEntities, Debug)]
-#[component(on_add = on_add_chunk_coord)]
-pub struct ChunkCoord(pub IVec3);
+#[require(Transform)]
+#[component(on_add = on_add_chunk_component)]
+pub struct ChunkComponent {
+    pub coord: IVec3,
+}
 
-impl ChunkCoord {
+impl ChunkComponent {
     pub fn translation(&self) -> Vec3 {
         Vec3::new(
-            (self.0.x * CHUNK_SIZE as i32) as f32,
-            (self.0.y * CHUNK_SIZE as i32) as f32,
-            (self.0.z * CHUNK_SIZE as i32) as f32,
+            (self.coord.x * CHUNK_SIZE as i32) as f32,
+            (self.coord.y * CHUNK_SIZE as i32) as f32,
+            (self.coord.z * CHUNK_SIZE as i32) as f32,
         )
     }
 }
 
-fn on_add_chunk_coord(mut world: DeferredWorld, context: HookContext) {
+fn on_add_chunk_component(mut world: DeferredWorld, context: HookContext) {
     let mut entity_mut = world.entity_mut(context.entity);
 
     debug_assert!(
@@ -70,9 +56,9 @@ fn on_add_chunk_coord(mut world: DeferredWorld, context: HookContext) {
         "added component not present on entity"
     );
 
-    let chunk_coord = *entity_mut.get::<ChunkCoord>().unwrap();
+    let chunk_cmp = *entity_mut.get::<ChunkComponent>().unwrap();
 
-    let translation = chunk_coord.translation();
+    let translation = chunk_cmp.translation();
 
     if let Some(mut transform) = entity_mut.get_mut::<Transform>() {
         transform.translation = translation;
@@ -85,21 +71,33 @@ fn on_add_chunk_coord(mut world: DeferredWorld, context: HookContext) {
 
     world
         .resource_mut::<ChunkEntityMap>()
-        .insert(chunk_coord, context.entity);
+        .insert(chunk_cmp.coord, context.entity);
 }
 
-#[derive(Resource, MapEntities, Debug, Default)]
+pub trait SpawnChunkCommandExt {
+    fn spawn_chunk(&mut self, chunk: Chunk, coord: IVec3);
+}
+
+impl<'w, 's> SpawnChunkCommandExt for Commands<'w, 's> {
+    fn spawn_chunk(&mut self, chunk: Chunk, coord: IVec3) {
+        self.queue(move |world: &mut World| {
+            let entity = world.spawn(ChunkComponent { coord }).id();
+            world.resource_mut::<Chunks>().0.insert(entity, chunk);
+        })
+    }
+}
+
+#[derive(Resource, Debug, Default)]
 pub struct ChunkEntityMap {
-    #[entities]
-    chunks: HashMap<ChunkCoord, Entity>,
+    chunks: HashMap<IVec3, Entity>,
 }
 
 impl ChunkEntityMap {
-    pub fn insert(&mut self, chunk_coord: ChunkCoord, entity: Entity) -> bool {
+    pub fn insert(&mut self, chunk_coord: IVec3, entity: Entity) -> bool {
         self.chunks.insert(chunk_coord, entity).is_some()
     }
 
-    pub fn get(&self, chunk_coord: &ChunkCoord) -> Option<Entity> {
+    pub fn get(&self, chunk_coord: &IVec3) -> Option<Entity> {
         self.chunks.get(chunk_coord).copied()
     }
 }
@@ -123,35 +121,54 @@ impl Plugin for WorldPlugin {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn rebuild_dirty_chunks(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     block_registry: Res<BlockRegistryRes>,
     mesher: Res<MesherResource>,
     handles: Res<VoxelAtlasHandles>,
-    mut chunk_query: Query<(Entity, &ChunkCoord, Option<&mut Mesh3d>), With<ChunkComponent>>,
+    mut chunk_query: Query<(Entity, &ChunkComponent, Option<&mut Mesh3d>)>,
     mut chunks: ResMut<Chunks>,
+    chunk_map: Res<ChunkEntityMap>,
 ) {
-    for (entity, _chunk_coord, mesh3d_opt) in chunk_query.iter_mut() {
-        chunks.0.entry(entity).and_modify(|chunk| {
-            if !chunk.is_dirty() {
-                return;
+    for (entity, chunk_cmp, mesh3d_opt) in chunk_query.iter_mut() {
+        // Fast check: if we don't have it, skip
+        let Some(is_dirty) = chunks.0.get(&entity).map(|c| c.is_dirty()) else {
+            continue;
+        };
+        if !is_dirty {
+            continue;
+        }
+
+        let mut chunk = match chunks.0.remove(&entity) {
+            Some(c) => c,
+            None => continue,
+        };
+
+        let neighbours = get_neighbours(&chunk_cmp.coord, &chunk_map, &chunks);
+        let mesh = mesher.0.build_mesh(&chunk, neighbours, &block_registry.0);
+        let handle = meshes.add(mesh);
+
+        match mesh3d_opt {
+            Some(mut mesh3d) => mesh3d.0 = handle,
+            None => {
+                commands
+                    .entity(entity)
+                    .insert((Mesh3d(handle), MeshMaterial3d(handles.material.clone())));
             }
+        }
 
-            let mesh = mesher.0.build_mesh(chunk, &block_registry.0);
+        chunk.clear_dirty();
 
-            let handle = meshes.add(mesh);
-
-            match mesh3d_opt {
-                Some(mut mesh3d) => mesh3d.0 = handle,
-                None => {
-                    commands
-                        .entity(entity)
-                        .insert((Mesh3d(handle), MeshMaterial3d(handles.material.clone())));
-                }
-            };
-
-            chunk.clear_dirty();
-        });
+        chunks.0.insert(entity, chunk);
     }
+}
+
+fn get_neighbours<'a>(coord: &IVec3, map: &ChunkEntityMap, chunks: &'a Chunks) -> Neighbors<'a> {
+    let neighbours = Neighbour::ALL.map(|n| {
+        map.get(&(coord + n.normal()))
+            .and_then(|entity| chunks.0.get(&entity))
+    });
+    Neighbors::from_array(neighbours)
 }
