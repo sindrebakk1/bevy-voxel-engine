@@ -2,7 +2,7 @@ use bevy::color::palettes::basic::YELLOW;
 use bevy::math::Ray3d;
 use bevy::prelude::*;
 
-use crate::plugins::world::{ChunkComponent, ChunkCoord, chunk::CHUNK_SIZE};
+use crate::plugins::world::{ChunkCoord, ChunkEntityMap, Chunks, chunk::CHUNK_SIZE};
 
 pub struct VoxelPickingPlugin;
 
@@ -85,7 +85,8 @@ fn toggle_voxel_picking_gizmos(
 fn update_voxel_hover(
     windows: Query<&Window>,
     camera_q: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
-    chunks: Query<(&ChunkComponent, &ChunkCoord)>,
+    chunk_map: Res<ChunkEntityMap>,
+    mut chunks: ResMut<Chunks>,
     mut hovered: ResMut<HoveredVoxel>,
 ) {
     let Ok(window) = windows.single() else {
@@ -109,7 +110,7 @@ fn update_voxel_hover(
     // Tune this if you want longer/shorter reach.
     let max_distance = 128.0;
 
-    hovered.hit = pick_voxel_dda(ray, max_distance, &chunks);
+    hovered.hit = pick_voxel_dda(ray, max_distance, &chunk_map, &mut chunks);
 }
 
 /// 3D DDA through the integer voxel grid.
@@ -117,7 +118,8 @@ fn update_voxel_hover(
 fn pick_voxel_dda(
     ray: Ray3d,
     max_distance: f32,
-    chunks: &Query<(&ChunkComponent, &ChunkCoord)>,
+    chunk_map: &ChunkEntityMap,
+    chunks: &mut Chunks,
 ) -> Option<VoxelHit> {
     let origin = ray.origin;
     let dir = ray.direction.normalize();
@@ -208,7 +210,7 @@ fn pick_voxel_dda(
     let mut entered_face: Option<VoxelFace> = None;
 
     // Check starting cell first.
-    if is_solid(cell, chunks) {
+    if is_solid(cell, chunk_map, chunks) {
         let face = entered_face.unwrap_or(VoxelFace::PosY);
         return Some(build_hit(cell, face));
     }
@@ -247,7 +249,7 @@ fn pick_voxel_dda(
             });
         }
 
-        if is_solid(cell, chunks) {
+        if is_solid(cell, chunk_map, chunks) {
             let face = entered_face.unwrap_or(VoxelFace::PosY);
             return Some(build_hit(cell, face));
         }
@@ -266,21 +268,18 @@ fn build_hit(world_cell: IVec3, face: VoxelFace) -> VoxelHit {
     }
 }
 
-fn is_solid(world_cell: IVec3, chunks: &Query<(&ChunkComponent, &ChunkCoord)>) -> bool {
+fn is_solid(world_cell: IVec3, chunk_map: &ChunkEntityMap, chunks: &mut Chunks) -> bool {
     let (chunk_coord, local) = world_to_chunk_local(world_cell);
 
-    // Find the chunk. This is O(n) right now; if you have many chunks,
-    // switch to an index (HashMap) resource.
-    for (chunk_comp, cc) in chunks.iter() {
-        if cc.0 == chunk_coord {
-            let v = chunk_comp
-                .chunk
-                .get(local.x as usize, local.y as usize, local.z as usize);
-            return !v.is_air();
-        }
-    }
+    let Some(entity) = chunk_map.chunks.get(&ChunkCoord(chunk_coord)) else {
+        return false;
+    };
 
-    false
+    chunks.0.get(entity).is_some_and(|chunk| {
+        !chunk
+            .get(local.x as usize, local.y as usize, local.z as usize)
+            .is_air()
+    })
 }
 
 /// Convert world voxel coord -> (chunk coord, local voxel coord).

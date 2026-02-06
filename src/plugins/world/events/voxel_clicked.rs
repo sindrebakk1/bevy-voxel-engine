@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use crate::plugins::world::{
-    ChunkComponent, ChunkCoord, ChunkMap,
+    ChunkCoord, ChunkEntityMap, Chunks,
     blocks::BLOCK_STONE,
     chunk::CHUNK_SIZE,
     voxel::Voxel,
@@ -14,7 +14,11 @@ pub struct VoxelClicked {
     pub button: MouseButton,
 }
 
-pub fn on_voxel_clicked(event: On<VoxelClicked>, mut commands: Commands, chunk_map: Res<ChunkMap>) {
+pub fn on_voxel_clicked(
+    event: On<VoxelClicked>,
+    chunk_map: Res<ChunkEntityMap>,
+    mut chunks: ResMut<Chunks>,
+) {
     let VoxelClicked { hit, button } = *event.event();
 
     let local = hit.local.as_uvec3();
@@ -38,37 +42,29 @@ pub fn on_voxel_clicked(event: On<VoxelClicked>, mut commands: Commands, chunk_m
                 return;
             };
 
-            commands
-                .entity(entity)
-                .entry::<ChunkComponent>()
-                .and_modify(move |mut chunk_comp| {
-                    chunk_comp.chunk.set(
-                        local.x as usize,
-                        local.y as usize,
-                        local.z as usize,
-                        Voxel::new(BLOCK_STONE),
-                    );
-                });
+            chunks.0.entry(entity).and_modify(move |chunk| {
+                chunk.set(
+                    local.x as usize,
+                    local.y as usize,
+                    local.z as usize,
+                    Voxel::new(BLOCK_STONE),
+                );
+            });
         }
-
         MouseButton::Right => {
             let Some(entity) = chunk_map.get(&ChunkCoord(hit.chunk)) else {
                 return;
             };
 
-            commands
-                .entity(entity)
-                .entry::<ChunkComponent>()
-                .and_modify(move |mut chunk_comp| {
-                    chunk_comp.chunk.set(
-                        local.x as usize,
-                        local.y as usize,
-                        local.z as usize,
-                        Voxel::AIR,
-                    );
-                });
+            chunks.0.entry(entity).and_modify(move |chunk| {
+                chunk.set(
+                    local.x as usize,
+                    local.y as usize,
+                    local.z as usize,
+                    Voxel::AIR,
+                );
+            });
         }
-
         _ => {}
     }
 }

@@ -22,10 +22,30 @@ use crate::{plugins::asset_loader::assets::VoxelAtlasHandles, state::LoadingStat
 #[derive(Resource)]
 pub struct MesherResource(pub Box<dyn ChunkMesher>);
 
+#[derive(Resource)]
+pub struct Chunks(HashMap<Entity, Chunk>);
+
+impl Default for Chunks {
+    fn default() -> Self {
+        Self(HashMap::with_capacity(256))
+    }
+}
+
 #[derive(Component, Default)]
 #[require(ChunkCoord, Transform)]
-pub struct ChunkComponent {
-    pub chunk: Chunk,
+pub struct ChunkComponent;
+
+pub trait SpawnChunkCommandExt {
+    fn spawn_chunk(&mut self, chunk: Chunk, coord: IVec3);
+}
+
+impl<'w, 's> SpawnChunkCommandExt for Commands<'w, 's> {
+    fn spawn_chunk(&mut self, chunk: Chunk, coord: IVec3) {
+        self.queue(move |world: &mut World| {
+            let entity = world.spawn((ChunkComponent, ChunkCoord(coord))).id();
+            world.resource_mut::<Chunks>().0.insert(entity, chunk);
+        })
+    }
 }
 
 #[derive(Component, Copy, Clone, Eq, PartialEq, Default, Hash, MapEntities, Debug)]
@@ -45,7 +65,7 @@ impl ChunkCoord {
 fn on_add_chunk_coord(mut world: DeferredWorld, context: HookContext) {
     let mut entity_mut = world.entity_mut(context.entity);
 
-    assert!(
+    debug_assert!(
         entity_mut.contains_id(context.component_id),
         "added component not present on entity"
     );
@@ -64,17 +84,17 @@ fn on_add_chunk_coord(mut world: DeferredWorld, context: HookContext) {
     }
 
     world
-        .resource_mut::<ChunkMap>()
+        .resource_mut::<ChunkEntityMap>()
         .insert(chunk_coord, context.entity);
 }
 
 #[derive(Resource, MapEntities, Debug, Default)]
-pub struct ChunkMap {
+pub struct ChunkEntityMap {
     #[entities]
     chunks: HashMap<ChunkCoord, Entity>,
 }
 
-impl ChunkMap {
+impl ChunkEntityMap {
     pub fn insert(&mut self, chunk_coord: ChunkCoord, entity: Entity) -> bool {
         self.chunks.insert(chunk_coord, entity).is_some()
     }
@@ -89,8 +109,9 @@ pub struct WorldPlugin;
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<BlockRegistryRes>()
+            .init_resource::<Chunks>()
             .insert_resource(MesherResource(Box::new(NaiveMesher)))
-            .insert_resource(ChunkMap {
+            .insert_resource(ChunkEntityMap {
                 chunks: HashMap::with_capacity(128),
             })
             .add_plugins((VoxelAtlasMaterialPlugin, VoxelPickingPlugin))
@@ -108,26 +129,29 @@ fn rebuild_dirty_chunks(
     block_registry: Res<BlockRegistryRes>,
     mesher: Res<MesherResource>,
     handles: Res<VoxelAtlasHandles>,
-    mut query: Query<(Entity, &mut ChunkComponent, Option<&mut Mesh3d>)>,
+    mut chunk_query: Query<(Entity, &ChunkCoord, Option<&mut Mesh3d>), With<ChunkComponent>>,
+    mut chunks: ResMut<Chunks>,
 ) {
-    for (entity, mut chunk_comp, mesh3d_opt) in query.iter_mut() {
-        if !chunk_comp.chunk.is_dirty() {
-            continue;
-        }
-
-        let mesh = mesher.0.build_mesh(&chunk_comp.chunk, &block_registry.0);
-
-        let handle = meshes.add(mesh);
-
-        match mesh3d_opt {
-            Some(mut mesh3d) => mesh3d.0 = handle,
-            None => {
-                commands
-                    .entity(entity)
-                    .insert((Mesh3d(handle), MeshMaterial3d(handles.material.clone())));
+    for (entity, _chunk_coord, mesh3d_opt) in chunk_query.iter_mut() {
+        chunks.0.entry(entity).and_modify(|chunk| {
+            if !chunk.is_dirty() {
+                return;
             }
-        };
 
-        chunk_comp.chunk.clear_dirty();
+            let mesh = mesher.0.build_mesh(chunk, &block_registry.0);
+
+            let handle = meshes.add(mesh);
+
+            match mesh3d_opt {
+                Some(mut mesh3d) => mesh3d.0 = handle,
+                None => {
+                    commands
+                        .entity(entity)
+                        .insert((Mesh3d(handle), MeshMaterial3d(handles.material.clone())));
+                }
+            };
+
+            chunk.clear_dirty();
+        });
     }
 }

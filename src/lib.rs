@@ -7,7 +7,7 @@ use bevy::prelude::*;
 use plugins::{
     AssetLoaderPlugin, MeshDebugPlugin, WorldPlugin,
     world::{
-        ChunkComponent, ChunkCoord,
+        SpawnChunkCommandExt,
         blocks::{BLOCK_DIRT, BLOCK_GRASS},
         chunk::{CHUNK_SIZE, Chunk},
         events::VoxelClicked,
@@ -58,10 +58,7 @@ fn spawn_test_chunks(mut commands: Commands) {
                     }
                 }
 
-                commands.spawn((
-                    ChunkComponent { chunk },
-                    ChunkCoord(IVec3::new(chunk_x, chunk_z, chunk_y)),
-                ));
+                commands.spawn_chunk(chunk, IVec3::new(chunk_x, chunk_z, chunk_y));
             }
         }
     }
