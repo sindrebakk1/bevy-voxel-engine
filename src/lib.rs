@@ -88,7 +88,7 @@ fn spawn_camera(mut commands: Commands) {
     // Sun
     commands.spawn((
         DirectionalLight {
-            illuminance: 10_000.0,
+            illuminance: 7_000.0,
             shadows_enabled: true,
             ..default()
         },

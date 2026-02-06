@@ -3,10 +3,14 @@ pub mod assets;
 use bevy::{
     asset::LoadState,
     image::{ImageSampler, ImageSamplerDescriptor},
+    pbr::ExtendedMaterial,
     prelude::*,
 };
 
-use crate::{plugins::world::material::VoxelAtlasMaterial, state::loading_state::LoadingState};
+use crate::{
+    plugins::world::material::{VoxelAtlasMaterial, VoxelAtlasMaterialExtension},
+    state::loading_state::LoadingState,
+};
 
 use assets::*;
 
@@ -61,9 +65,12 @@ fn finalize_assets(
 
     let grid = UVec2::new(w / 32, h / 32);
 
-    let material = materials.add(VoxelAtlasMaterial {
-        atlas: assets.block_atlas.clone(),
-        grid,
+    let material = materials.add(ExtendedMaterial {
+        base: StandardMaterial::default(),
+        extension: VoxelAtlasMaterialExtension {
+            atlas: assets.block_atlas.clone(),
+            grid,
+        },
     });
 
     commands.insert_resource(VoxelAtlasHandles { material });

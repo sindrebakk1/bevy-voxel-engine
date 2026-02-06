@@ -1,6 +1,9 @@
 use bevy::{
     mesh::MeshVertexBufferLayoutRef,
-    pbr::{Material, MaterialPipeline, MaterialPipelineKey, MaterialPlugin},
+    pbr::{
+        ExtendedMaterial, MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline,
+        MaterialPlugin,
+    },
     prelude::*,
     render::render_resource::{
         AsBindGroup, RenderPipelineDescriptor, SpecializedMeshPipelineError,
@@ -10,29 +13,33 @@ use bevy::{
 
 use crate::plugins::world::meshers::naive_mesher::ATTRIBUTE_TILE_ID;
 
+const SHADER_ASSET_PATH: &str = "shaders/voxel_atlas.wgsl";
+
+pub type VoxelAtlasMaterial = ExtendedMaterial<StandardMaterial, VoxelAtlasMaterialExtension>;
+
 #[derive(Asset, TypePath, AsBindGroup, Clone)]
-pub struct VoxelAtlasMaterial {
-    #[texture(0)]
-    #[sampler(1)]
+pub struct VoxelAtlasMaterialExtension {
+    #[texture(100)]
+    #[sampler(101)]
     pub atlas: Handle<Image>,
 
-    #[uniform(2)]
+    #[uniform(102)]
     pub grid: UVec2,
 }
 
-impl Material for VoxelAtlasMaterial {
+impl MaterialExtension for VoxelAtlasMaterialExtension {
     fn vertex_shader() -> ShaderRef {
-        "shaders/voxel_atlas.wgsl".into()
+        SHADER_ASSET_PATH.into()
     }
     fn fragment_shader() -> ShaderRef {
-        "shaders/voxel_atlas.wgsl".into()
+        SHADER_ASSET_PATH.into()
     }
 
     fn specialize(
-        _pipeline: &MaterialPipeline,
+        _pipeline: &MaterialExtensionPipeline,
         descriptor: &mut RenderPipelineDescriptor,
         layout: &MeshVertexBufferLayoutRef,
-        _key: MaterialPipelineKey<Self>,
+        _key: MaterialExtensionKey<Self>,
     ) -> Result<(), SpecializedMeshPipelineError> {
         let vertex_layout = layout.0.get_layout(&[
             Mesh::ATTRIBUTE_POSITION.at_shader_location(0),
@@ -49,6 +56,8 @@ pub struct VoxelAtlasMaterialPlugin;
 
 impl Plugin for VoxelAtlasMaterialPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(MaterialPlugin::<VoxelAtlasMaterial>::default());
+        app.add_plugins(MaterialPlugin::<
+            ExtendedMaterial<StandardMaterial, VoxelAtlasMaterialExtension>,
+        >::default());
     }
 }
